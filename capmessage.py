@@ -2,20 +2,18 @@
 ##  Laboratorio de Engenharia de Computadores (LECOM),                       ##
 ##  Universidade Federal de Minas Gerais (UFMG).                             ##
 ##                                                                           ##
-##  Messages for CoROA.                                                      ##
+##  Messages for CAPTAIN.                                                    ##
 ##                                                                           ##
 ##  TODO:                                                                    ##
 ##                                                                           ##
 ##  Author: Eduardo Pinto (epmcj@dcc.ufmg.br)                                ##
 ###############################################################################
-
-BROADCAST_ADDR = 0
-BASIC_TTL = 100
+from message import *
 
 # Fisrt half of byte
-class UOARTypes: 
-    COMMON_DATA   = 0x00
-    ACK           = 0x01
+class CAPTAINTypes(MsgTypes): 
+    # COMMON_DATA   = 0x00
+    # ACK           = 0x01
     # control messages
     INFO_ANNOUN    = 0x02
     SCORE_ANNOUN   = 0x03
@@ -30,119 +28,112 @@ class UOARTypes:
     REP_EXCHANGE   = 0x0c
 
 # Second half of byte
-class UOARFlags:
-    ACOUSTIC = 0x10
-    WITH_ACK = 0x20
+class CAPTAINFlags(MsgFlags):
+    # ACOUSTIC = 0x10
+    # NEED_ACK = 0x20
     HEAD_SRC = 0x40
 
-class Message:
+class CAPTAINMessage(Message):
     # Basic message
     headerSize = 10 # 4 bytes for each addr + 1 for type + payload length + 
                     # 1 for ttl (time is just for statistics)       
     def __init__(self, src, dst, flags, payload, ctime, srcs, ttl):
-        self.src   = src
-        self.dst   = dst
-        self.flags = flags
-        self.ctime = ctime # just for statistics
-        self.srcs  = srcs # just for statistics
-        self.ttl   = ttl
-        if hasattr(payload, '__len__'):
-            self.payload = payload
-        else:
-            self.payload = [payload]
-
-    def __len__(self):
-        return (self.headerSize + len(self.payload))
-
-    def __str__(self):
-        return 'Message from: ' + str(self.src) \
-                + ' to ' + str(self.dst) + '.' \
-                + ' (len = ' + str(len(self)) + ')'
+        super(CAPTAINMessage, self).__init__(src, dst, flags, payload, ctime, 
+                                             ttl)
+        self.srcs  = srcs  # just for statistics
     
 class MessageGenerator:
     # Message that carries data
     def create_acoustic_datamsg(src, dst, payload, ctime, srcs, isHead, 
                                 ttl = BASIC_TTL):
-        opt = UOARFlags.ACOUSTIC + UOARFlags.WITH_ACK + UOARTypes.COMMON_DATA
+        opt = CAPTAINFlags.ACOUSTIC + CAPTAINFlags.NEED_ACK + \
+              CAPTAINTypes.COMMON_DATA
         if isHead:
-            opt = opt + UOARFlags.HEAD_SRC
-        return Message(src, dst, opt, payload, ctime, srcs, ttl)
+            opt = opt + CAPTAINFlags.HEAD_SRC
+        return CAPTAINMessage(src, dst, opt, payload, ctime, srcs, ttl)
     
     # Message that carries data
     def create_optical_datamsg(src, dst, payload, ctime, srcs, isHead, 
                                 ttl = BASIC_TTL):
-        opt = UOARFlags.WITH_ACK + UOARTypes.COMMON_DATA
-        return Message(src, dst, opt, payload, ctime, srcs, ttl)
+        opt = CAPTAINFlags.NEED_ACK + CAPTAINTypes.COMMON_DATA
+        return CAPTAINMessage(src, dst, opt, payload, ctime, srcs, ttl)
 
     # Simple ACK
     def create_acoustic_ack(src, dst, ttl = BASIC_TTL):
-        opt = UOARFlags.ACOUSTIC + UOARTypes.ACK
-        return Message(src, dst, opt, [], 0, 1, ttl)
+        opt = CAPTAINFlags.ACOUSTIC + CAPTAINTypes.ACK
+        return CAPTAINMessage(src, dst, opt, [], 0, 1, ttl)
 
     # Simple ACK 
     def create_optical_ack(src, dst, ttl = BASIC_TTL):
-        opt = UOARTypes.ACK
-        return Message(src, dst, opt, [], 0, 1, ttl)
+        opt = CAPTAINTypes.ACK
+        return CAPTAINMessage(src, dst, opt, [], 0, 1, ttl)
 
     # Message for information announcement
     def create_iamsg(src, position, state, hopsToSink, ttl = BASIC_TTL):
-        opt = UOARFlags.ACOUSTIC + UOARTypes.INFO_ANNOUN
-        return Message(src, BROADCAST_ADDR, opt, \
+        opt = CAPTAINFlags.ACOUSTIC + CAPTAINTypes.INFO_ANNOUN
+        return CAPTAINMessage(src, BROADCAST_ADDR, opt, \
                        [position, state, hopsToSink], 0, 1, ttl)
 
     # Message for score announcement
     def create_samsg(src, score, ttl = BASIC_TTL):
-        opt = UOARFlags.ACOUSTIC + UOARTypes.SCORE_ANNOUN
-        return Message(src, BROADCAST_ADDR, opt, score, 0, 1, ttl)
+        opt = CAPTAINFlags.ACOUSTIC + CAPTAINTypes.SCORE_ANNOUN
+        return CAPTAINMessage(src, BROADCAST_ADDR, opt, score, 0, 1, ttl)
 
     # Message for cluster announcement
     def create_camsg(src, ishead, position, ttl = BASIC_TTL):
-        opt = UOARFlags.ACOUSTIC + UOARTypes.CLUSTER_ANNOUN
-        return Message(src, BROADCAST_ADDR, opt, [ishead, position], 0, 1, ttl)
+        opt = CAPTAINFlags.ACOUSTIC + CAPTAINTypes.CLUSTER_ANNOUN
+        return CAPTAINMessage(src, BROADCAST_ADDR, opt, [ishead, position], 0, 
+                              1, ttl)
 
     # Message to create routes between cluster heads
     def create_ramsg(src, isHead, nextHop, hopsToSink, position, 
                      ttl = BASIC_TTL):
-        opt = UOARFlags.ACOUSTIC + UOARTypes.ROUTE_ANNOUN
-        return Message(src, BROADCAST_ADDR, opt, [isHead, nextHop, \
+        opt = CAPTAINFlags.ACOUSTIC + CAPTAINTypes.ROUTE_ANNOUN
+        return CAPTAINMessage(src, BROADCAST_ADDR, opt, [isHead, nextHop, \
                        hopsToSink, position], 0, 1, ttl)
     
     # Message to request neighbors score
     def create_rqsmsg(src, ttl = BASIC_TTL):
-        opt = UOARFlags.ACOUSTIC + UOARTypes.REQ_SCORE
-        return Message(src, BROADCAST_ADDR, opt, [], 0, 1, ttl)
+        opt = CAPTAINFlags.ACOUSTIC + CAPTAINTypes.REQ_SCORE
+        return CAPTAINMessage(src, BROADCAST_ADDR, opt, [], 0, 1, ttl)
     
     # Message to reply a score request
     def create_rpsmsg(src, dst, score, ttl = BASIC_TTL):
-        opt = UOARFlags.WITH_ACK + UOARTypes.REP_SCORE
-        return Message(src, dst, opt, score, 0, 1, ttl)
+        opt = CAPTAINFlags.NEED_ACK + CAPTAINTypes.REP_SCORE
+        return CAPTAINMessage(src, dst, opt, score, 0, 1, ttl)
     
     # Message to inform new cluster head
     def create_uimsg(src, newHead, nextHop, ttl = BASIC_TTL):
-        opt = UOARFlags.ACOUSTIC + UOARTypes.UPDATE_INFO
-        return Message(src, BROADCAST_ADDR, opt, [newHead, nextHop], 0, 1, ttl)
+        opt = CAPTAINFlags.ACOUSTIC + CAPTAINTypes.UPDATE_INFO
+        return CAPTAINMessage(src, BROADCAST_ADDR, opt, [newHead, nextHop], 0, 
+                              1, ttl)
 
     # Message to request info about routes that do not contain the dead node.
     def create_rqrmsg(src, deadNode, ttl = BASIC_TTL):
-        opt = UOARFlags.ACOUSTIC + UOARTypes.REQ_RINFO
-        return Message(src, BROADCAST_ADDR, opt, deadNode, 0, 1, ttl)
+        opt = CAPTAINFlags.ACOUSTIC + CAPTAINTypes.REQ_RINFO
+        return CAPTAINMessage(src, BROADCAST_ADDR, opt, deadNode, 0, 1, ttl)
 
     # Message to reply a route info request
-    def create_acoustic_rprmsg(src, dst, nextHop, hopsToSink, ttl = BASIC_TTL):
-        opt = UOARFlags.ACOUSTIC + UOARFlags.WITH_ACK + UOARTypes.REP_RINFO
-        return Message(src, dst, opt, [nextHop, hopsToSink], 0, 1, ttl)
+    def create_acoustic_rprmsg(src, dst, isHead, nextHop, hopsToSink, 
+                               ttl = BASIC_TTL):
+        opt = CAPTAINFlags.ACOUSTIC + CAPTAINFlags.NEED_ACK + \
+              CAPTAINTypes.REP_RINFO
+        return CAPTAINMessage(src, dst, opt, [isHead, nextHop, hopsToSink], 0,
+                              1, ttl)
     
     # Message to reply a route info request
-    def create_optical_rprmsg(src, dst, nextHop, hopsToSink, ttl = BASIC_TTL):
-        opt = UOARFlags.WITH_ACK + UOARTypes.REP_RINFO
-        return Message(src, dst, opt, [nextHop, hopsToSink], 0, 1, ttl)
+    def create_optical_rprmsg(src, dst, isHead, nextHop, hopsToSink, 
+                              ttl = BASIC_TTL):
+        opt = CAPTAINFlags.NEED_ACK + CAPTAINTypes.REP_RINFO
+        return CAPTAINMessage(src, dst, opt, [isHead, nextHop, hopsToSink], 0,
+                              1, ttl)
 
     # Message to request a leader exchange
     def create_optical_rqemsg(src, dst, ttl = BASIC_TTL):
-        opt = UOARFlags.WITH_ACK + UOARTypes.REQ_EXCHANGE
-        return Message(src, dst, opt, [], 0, 1, ttl)
+        opt = CAPTAINFlags.NEED_ACK + CAPTAINTypes.REQ_EXCHANGE
+        return CAPTAINMessage(src, dst, opt, [], 0, 1, ttl)
 
     # Message to reply a leader exchange
     def create_optical_rpemsg(src, dst, canChange, hopsToSink, ttl = BASIC_TTL):
-        opt = UOARFlags.WITH_ACK + UOARTypes.REP_EXCHANGE
-        return Message(src, dst, opt, [canChange, hopsToSink], 0, 1, ttl)
+        opt = CAPTAINFlags.NEED_ACK + CAPTAINTypes.REP_EXCHANGE
+        return CAPTAINMessage(src, dst, opt, [canChange, hopsToSink], 0, 1, ttl)

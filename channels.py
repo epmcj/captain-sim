@@ -1,9 +1,10 @@
 ###############################################################################
-##  Laboratorio de Engenharia de Computadores (LECOM),                       ##
-##  Universidade Federal de Minas Gerais (UFMG).                             ##
+##  Laboratorio de Engenharia de Computadores (LECOM)                        ##
+##  Departamento de Ciencia da Computacao (DCC)                              ##
+##  Universidade Federal de Minas Gerais (UFMG)                              ##
 ##                                                                           ##
 ##  Implementation of both acoustic and optical channels used in the         ##
-##  simulator                                                                ##
+##  simulator.                                                               ##
 ##                                                                           ##
 ##  TODO:                                                                    ##
 ##                                                                           ##
@@ -11,7 +12,7 @@
 ###############################################################################
 
 from random import random
-from math import log10, sqrt, erfc, cos, pi, e
+from math   import log10, sqrt, erfc, cos, pi, e
 
 class Channel:
     def use(self):
@@ -34,22 +35,25 @@ class AcousticChannel(Channel):
         self.s = s
         self.w = w
     
+    def get_propagation_time(self, distance):
+        return distance / self.soundSpeed
+
     def use(self, frequency, power, distance, packetSize):
         #
-        per = self.__per(distance, frequency, power, packetSize)
+        per = self.perRF(distance, frequency, power, packetSize)
         return not (random() < per)
 
-    def __pathloss(self, distance, frequency):
+    def pathloss(self, distance, frequency):
         # Transmission loss that occurs in a underwater acoustic channel.
         # distance in meters
         # frequency in kHz
         # k, the spreading factor
         #
         return 10.0 * self.k * log10(distance) \
-               + distance * self.__thorp(frequency)
+               + distance * self.thorp(frequency)
         
 
-    def __thorp(self, frequency):
+    def thorp(self, frequency):
         # Thorp's attenuation in dB/m (dB re uPa) 
         # frequency in kHz
         #
@@ -62,7 +66,7 @@ class AcousticChannel(Channel):
             atten = 0.002 + 0.11 * (f / (1 + f)) + 0.011 * f
         return atten/1000
 
-    def __noise(self, frequency):
+    def noise(self, frequency):
         # Noise in an underwater acoustic channel, in dB re uPa
         # "Priniciples of Underwater Sound" by Robert J. Urick
         # frequency in kHz
@@ -81,7 +85,7 @@ class AcousticChannel(Channel):
         noise = 10 * log10(nTurbulence + nShipping + nWind + nThermal)
         return noise
 
-    def __per(self, distance, frequency, Pt, psize, noise_bw = 2.35):
+    def snr_dB(self, distance, frequency, Pt, psize, noise_bw):
         # Packet error rate
         # distance in meters
         # frequency in kHz
@@ -89,13 +93,57 @@ class AcousticChannel(Channel):
         # psize, the packet size in bytes
         # noise_bw, receiver bandwidth in dB re uPa
         #
-        pl = self.__pathloss(distance, frequency)
-        nf = noise_bw * self.__noise(frequency)
+        pl = self.pathloss(distance, frequency)
+        nf = noise_bw * self.noise(frequency)
+        snrdB = Pt - pl - nf
+        return snrdB
+
+    def snr(self, distance, frequency, Pt, psize, noise_bw):
+        # Packet error rate
+        # distance in meters
+        # frequency in kHz
+        # Pt, the transmission power in dB re uPa
+        # psize, the packet size in bytes
+        # noise_bw, receiver bandwidth in dB re uPa
+        #
+        snr = 10 ** (self.snr_dB(distance, frequency, Pt, size, noise_bw)/10)
+
+    def per(self, distance, frequency, Pt, psize, noise_bw = 2.35):
+        # Packet error rate
+        # distance in meters
+        # frequency in kHz
+        # Pt, the transmission power in dB re uPa
+        # psize, the packet size in bytes
+        # noise_bw, receiver bandwidth in dB re uPa
+        # (!) Does not use snr function for speed.
+        #
+        pl = self.pathloss(distance, frequency)
+        nf = noise_bw * self.noise(frequency)
+        snrdB = Pt - pl - nf
+        snr = 10 ** (snrdB/10) 
+        # using BPSK bit error rate w/ AWGN
+        ber = 0.5 * erfc(sqrt(snr))
+        return 1.0 - (1.0 - ber) ** (8 * psize)
+
+    def perRF(self, distance, frequency, Pt, psize, noise_bw = 2.35):
+        # Packet error rate
+        # distance in meters
+        # frequency in kHz
+        # Pt, the transmission power in dB re uPa
+        # psize, the packet size in bytes
+        # noise_bw, receiver bandwidth in dB re uPa
+        # (!) Does not use snr function for speed.
+        #
+        f = float(frequency)
+        d = float(distance)
+        # pl = self.pathloss(distance, frequency)
+        pl = self.pathloss(d, f)
+        # nf = noise_bw * self.noise(frequency)
+        nf = noise_bw * self.noise(f)
         snrdB = Pt - pl - nf
         snr = 10 ** (snrdB/10)
         # using BPSK bit error rate w/ Rayleigh fading
-        # ber = 0.5 * (1 - sqrt(snr / (1 + snr)))
-        ber = 0.5 * erfc(sqrt(snr))
+        ber = 0.5 * (1 - sqrt(snr / (1 + snr)))
         return 1.0 - (1.0 - ber) ** (8 * psize)
 
 
@@ -130,10 +178,16 @@ class OpticalChannel(Channel):
         self.At = At
         self.bw = bw
         self.theta = theta
+
+    def get_propagation_time(self, distance):
+        return distance / self.lightSpeed
     
     def use(self, power, distance, d, beta, psize):
-        per = self.per(power, distance, d, beta, psize)
+        per = self.perRF(power, distance, d, beta, psize)
         return not (random() < per)
+
+    def snr_dB(self, P, distance, d, beta):
+        return 10 * log10(self.snr(P, distance, d, beta))
 
     def snr(self, P, distance, d, beta):
         # Calculating the light power received
@@ -144,7 +198,7 @@ class OpticalChannel(Channel):
         thermalNoise = (4 * self.K * self.T * self.bw) / self.R # squared
         currentNoise = 2 * self.q * (self.Id + self.Il) * self.bw # squared
         snr = ((self.S * p) ** 2) / (currentNoise + thermalNoise)
-        return 10 * log10(snr)
+        return snr
 
     def per(self, P, distance, d, beta, psize):
         # Packet error rate
@@ -153,9 +207,39 @@ class OpticalChannel(Channel):
         # d
         # beta, the inclination angle in rad
         # psize, the packet size in bytes
+        # (!) Does not use snr function for speed.
         #
-        snr = self.snr(P, distance, d, beta)
-        # using BPSK bit error rate
+        # Calculating the light power received
+        p = 2 * P * self.Ar * cos(beta)
+        p = p / (pi * (distance ** 2) * (1 - cos(self.theta)) + 2 * self.At)
+        p = p * (e ** (-self.c * d)) 
+        # Calculating SNR
+        thermalNoise = (4 * self.K * self.T * self.bw) / self.R # squared
+        currentNoise = 2 * self.q * (self.Id + self.Il) * self.bw # squared
+        snr = ((self.S * p) ** 2) / (currentNoise + thermalNoise)
+        # using BPSK bit error rate w/ AWGN
         ber = 0.5 * erfc(sqrt(snr))
+        per = 1.0 - (1.0 - ber) ** (8 * psize)
+        return per
+
+    def perRF(self, P, distance, d, beta, psize):
+        # Packet error rate
+        # Pt, the transmission power  in dBm
+        # distance in meters
+        # d
+        # beta, the inclination angle in rad
+        # psize, the packet size in bytes
+        # (!) Does not use snr function for speed.
+        #
+        # Calculating the light power received
+        p = 2 * P * self.Ar * cos(beta)
+        p = p / (pi * (distance ** 2) * (1 - cos(self.theta)) + 2 * self.At)
+        p = p * (e ** (-self.c * d)) 
+        # Calculating SNR
+        thermalNoise = (4 * self.K * self.T * self.bw) / self.R # squared
+        currentNoise = 2 * self.q * (self.Id + self.Il) * self.bw # squared
+        snr = ((self.S * p) ** 2) / (currentNoise + thermalNoise)
+        # using BPSK bit error rate w/ Rayleigh fading
+        ber = 0.5 * (1 - sqrt(snr / (1 + snr)))
         per = 1.0 - (1.0 - ber) ** (8 * psize)
         return per
